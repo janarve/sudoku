@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script>
+var input = [0,0,0, 6,7,0, 0,2,0,
+             7,0,1, 0,0,0, 9,0,0,
+             8,0,0, 0,5,3, 0,0,0,
+
+             0,1,0, 0,2,0, 0,6,0,
+             0,0,9, 0,0,6, 0,0,0,
+             3,0,0, 0,0,0, 7,8,0,
+
+             0,0,5, 0,0,0, 3,0,7,
+             2,0,0, 3,0,0, 5,0,0,
+             0,0,0, 0,0,5, 0,4,0
+]
+
+var board = {
+    cell: function (x, y) {
+        return this.cells[9*y + x]
+    },
+    removeFrom9: function (x, y, xc, yc, num)
+    {
+        let yend = y + yc
+        let xend = x + xc
+        for (let yy = y; yy < yend; ++yy) {
+            for (let xx = x; xx < xend; ++xx) {
+                let cel = this.cell(xx, yy)
+                this.removeFromCell(cel, num)
+            }
+        }
+    },
+    get9Cells: function(x, y, xc) {
+        if (xc != 1 && xc != 3 && xc != 9)
+            console.assert('xc:', xc)
+        let yc = 9/xc
+        let res = []
+        let yend = y + yc
+        let xend = x + xc
+        for (let yy = y; yy < yend; ++yy) {
+            for (let xx = x; xx < xend; ++xx) {
+                let cel = this.cell(xx, yy)
+                res.push(cel)
+            }
+        }
+        return res
+    },
+    removeFromCell: function(cel, num) {
+        cel.candidates.delete(num)
+    },
+    cells: []
+}
+
+for (let c = 0; c < input.length; ++c) {
+    let s = new Set()
+    for (let c = 1; c <= 9; ++c) {
+        s.add(c)
+    }
+    var entry = {}
+    entry.n = input[c]
+    entry.candidates = s
+    board.cells.push(entry)
+}
+
+function getCandidates(x, y)
+{
+    let arr = []
+    let s = board.cell(x,y).candidates
+    return s
+}
+
+function removeObviousCandidates()
+{
+    let changed = true
+    for (let y = 0; y < 9; ++y) {
+        for (let x = 0; x < 9; ++x) {
+            let cel = board.cell(x, y)
+            if (cel.n > 0) {
+                let xr = Math.floor(x/3)*3
+                let yr = Math.floor(y/3)*3
+                board.removeFrom9(xr, yr, 3, 3, cel.n)
+                board.removeFrom9(0, y, 9, 1, cel.n)
+                board.removeFrom9(x, 0, 1, 9, cel.n)
+            }
+        }
+    }
+    return changed
+}
+
+function applySingleCandidates()
+{
+    let changed = false
+    for (let y = 0; y < 9; ++y) {
+        for (let x = 0; x < 9; ++x) {
+            let cel = board.cell(x, y)
+            let cands = cel.candidates
+            if (cel.n === 0 && cands.size === 1) {
+                cel.n = cands.values().next().value
+                changed = true
+            }
+        }
+    }
+    return changed
+}
+
+function solve9SeriesWithUniqueNumber(cells)
+{
+    arr = []
+    arr.length = 10
+    arr.fill(0)
+    for (let i = 0; i < cells.length; ++i) {
+        let cel = cells[i]
+        if (cel.n === 0) {
+            let cands = cel.candidates
+
+            const cands_it = cands.entries();
+            for (const cand of cands_it) {
+                let n = cand[0]
+                arr[n] = arr[n] + 1
+            }
+        }
+    }
+    for (let n = 1; n < 10; ++n) {
+        if (arr[n] === 1) {
+            for (let i = 0; i < 9; ++i) {
+                let cel = cells[i]
+                if (cel.n === 0 && cel.candidates.has(n)) {
+                    cel.n = n
+                    changed = true
+                }
+            }
+        }
+    }
+}
+
+function applySingleCandidates_generic()
+{
+    let changed = false
+    let arr = []
+    arr.length = 10
+/*
+    // rows
+    for (let y = 0; y < 9; ++y) {
+        arr.fill(0)
+        for (let x = 0; x < 9; ++x) {
+            let cel = board.cell(x, y)
+            if (cel.n === 0) {
+                let cands = cel.candidates
+
+                const cands_it = cands.entries();
+                for (const cand of cands_it) {
+                    let n = cand[0]
+                    arr[n] = arr[n] + 1
+                }
+            }
+        }
+        for (let n = 1; n < 10; ++n) {
+            if (arr[n] === 1) {
+                for (let x = 0; x < 9; ++x) {
+                    let cel = board.cell(x, y)
+                    if (cel.n === 0 && cel.candidates.has(n)) {
+                        cel.n = n
+                        changed = true
+                    }
+                }
+            }
+        }
+    }
+
+    // columns
+    for (let x = 0; x < 9; ++x) {
+        arr.fill(0)
+        for (let y = 0; y < 9; ++y) {
+            let cel = board.cell(x, y)
+            if (cel.n === 0) {
+                let cands = cel.candidates
+
+                const cands_it = cands.entries();
+                for (const cand of cands_it) {
+                    let n = cand[0]
+                    arr[n] = arr[n] + 1
+                }
+            }
+        }
+        for (let n = 1; n < 10; ++n) {
+            if (arr[n] === 1) {
+                for (let y = 0; y < 9; ++y) {
+                    let cel = board.cell(x, y)
+                    if (cel.n === 0 && cel.candidates.has(n)) {
+                        cel.n = n
+                        changed = true
+                    }
+                }
+            }
+        }
+    }
+*/
+    // 3x3 subgrids ###TODO
+    for (let x = 0; x < 9; x+=3) {
+        for (let y = 0; y < 9; y+=3) {
+            let cells = board.get9Cells(x,y, 3)
+            solve9SeriesWithUniqueNumber(cells)
+        }
+    }
+
+
+    return changed
+}
+
+function drawBoard()
+{
+    let table = document.getElementById('tabell')
+    let tr_list = table.getElementsByTagName('tr')
+
+    for (let y = 0; y < 9; ++y) {
+        let tr = tr_list.item(y)
+        let td_list = tr.getElementsByTagName('td')
+        for (let x = 0; x < 9; ++x) {
+            let td = td_list.item(x)
+            let div_list = td.getElementsByTagName('div')
+            for (let n = 0; n < 10; ++n) {
+                let div = div_list.item(n)
+                div.classList.add("hide")
+            }
+            let cell = board.cell(x,y)
+            if (cell.n > 0) {
+                let div = div_list.item(9)
+                div.innerText = cell.n
+                div.classList.remove("hide")
+
+            } else {
+                var cands = cell.candidates
+                //console.log(x, y, cands)
+                for (let n = 1; n <= 9; ++n) {
+                    let div = div_list.item(n-1)
+                    if (cands.has(n)) {
+                        div.classList.remove("hide")
+                    }
+                }
+            }
+        }
+    }
+}
+
+function showCandidates()
+{
+    let table = document.getElementById('tabell')
+    let tr_list = table.getElementsByTagName('tr')
+    for (let y = 0; y < 9; ++y) {
+        let tr = tr_list.item(y)
+        let td_list = tr.getElementsByTagName('td')
+        for (let x = 0; x < 9; ++x) {
+            let td = td_list.item(x)
+            for (let n = 1; n <= 9; ++n) {
+                let div = document.createElement('div')
+                div.innerHTML = '' + n
+
+                if (n % 3 == 1)
+                    div.classList.add("left")
+                else if (n % 3 == 2)
+                    div.classList.add("hcenter")
+                else if (n % 3 == 0)
+                    div.classList.add("right")
+
+                if (n >= 7) {
+                    div.classList.add("bottom")
+                } else if (n >= 4) {
+                    div.classList.add("vcenter")
+                } else if (n >= 1) {
+                    div.classList.add("top")
+                }
+
+                td.appendChild(div)
+            }
+            let div = document.createElement('div')
+            div.classList.add("top")
+            div.classList.add("bottom")
+            div.classList.add("left")
+            div.classList.add("right")
+            div.classList.add("number")
+            div.classList.add("hide")
+            div.innerHTML = "0"
+            td.appendChild(div)
+        }
+    }
+
+/*   board.cell(0,0).candidates.delete(3)
+    board.cell(1,1).candidates.delete(6)
+*/
+
+//    incrementalSolve()
+
+
+
+// update visualization of candidates
+    drawBoard()
+}
+
+
+var g_solveState = 0
+
+function incrementalSolve()
+{
+    let subSolvers = [
+        removeObviousCandidates,
+        applySingleCandidates,
+        removeObviousCandidates,
+        applySingleCandidates_generic
+    ]
+
+    if (g_solveState >= subSolvers.length)
+        g_solveState = 0
+    subSolvers[g_solveState]()
+
+    drawBoard()
+
+    ++g_solveState
+}
+
+</script>
+<style>
+table {
+    border-collapse: collapse;
+}
+
+table tr td {
+  /*background-color:#eee;
+*/
+    width: 45px;
+    height: 45px;
+    position: relative;
+}
+
+table tr td div {
+    position:absolute;
+    font-size: 10px;
+}
+
+.left {
+    left: 2px;
+}
+
+.hcenter {
+  width: 100%;
+  text-align: center;
+}
+
+.right {
+    right: 2px;
+}
+
+.top {
+    top: 2px;
+}
+
+.vcenter {
+    top: 50%;
+    -ms-transform: translateY(-50%);
+    transform: translateY(-50%);
+}
+
+.bottom {
+    bottom: 2px;
+}
+
+.hide {
+    display: none;
+}
+
+.number {
+    font-size: 18px;
+    background-color: #a0ffa0;
+}
+
+
+</style>
+</head>
+<body onload="showCandidates()">
+<table id=tabell border="1">
+<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+
+<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+
+<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+</table>
+<button onClick="incrementalSolve()">Solve</botton>
+</body>
+</html>
