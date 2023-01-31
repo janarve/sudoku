@@ -2,17 +2,17 @@
 <html>
 <head>
 <script>
-var input = [0,0,0, 6,7,0, 0,2,0,
-             7,0,1, 0,0,0, 9,0,0,
-             8,0,0, 0,5,3, 0,0,0,
+var input = [0,0,0, 6,0,0, 0,9,7,
+             5,0,0, 2,0,0, 0,0,3,
+             0,0,0, 0,0,1, 5,0,0,
 
-             0,1,0, 0,2,0, 0,6,0,
-             0,0,9, 0,0,6, 0,0,0,
-             3,0,0, 0,0,0, 7,8,0,
+             0,0,0, 0,0,4, 1,0,0,
+             0,0,4, 0,2,0, 0,0,0,
+             2,7,0, 0,1,0, 8,0,5,
 
-             0,0,5, 0,0,0, 3,0,7,
-             2,0,0, 3,0,0, 5,0,0,
-             0,0,0, 0,0,5, 0,4,0
+             0,0,9, 0,0,0, 0,0,0,
+             0,0,0, 3,0,0, 7,5,0,
+             6,1,3, 0,7,0, 0,0,0
 ]
 
 var board = {
@@ -69,6 +69,14 @@ function getCandidates(x, y)
     return s
 }
 
+function removeCandidateFromCells(cells, num)
+{
+    for (let i = 0; i < cells.length; ++i) {
+        let cel = cells[i]
+        cel.candidates.delete(num)
+    }
+}
+
 function removeObviousCandidates()
 {
     let changed = true
@@ -87,7 +95,7 @@ function removeObviousCandidates()
     return changed
 }
 
-function applySingleCandidates()
+function solve_singleNumber()
 {
     let changed = false
     for (let y = 0; y < 9; ++y) {
@@ -96,6 +104,7 @@ function applySingleCandidates()
             let cands = cel.candidates
             if (cel.n === 0 && cands.size === 1) {
                 cel.n = cands.values().next().value
+                removeObviousCandidates()
                 changed = true
             }
         }
@@ -103,8 +112,9 @@ function applySingleCandidates()
     return changed
 }
 
-function solve9SeriesWithUniqueNumber(cells)
+function solve9Series_uniqueNumber(cells)
 {
+    let changed = false
     arr = []
     arr.length = 10
     arr.fill(0)
@@ -126,86 +136,105 @@ function solve9SeriesWithUniqueNumber(cells)
                 let cel = cells[i]
                 if (cel.n === 0 && cel.candidates.has(n)) {
                     cel.n = n
+                    removeObviousCandidates()
                     changed = true
                 }
             }
         }
     }
+    return changed
 }
 
-function applySingleCandidates_generic()
+// If there is only one cell in a series holding that unique number, that cell must have that number
+function solve_uniqueNumbers()
 {
     let changed = false
-    let arr = []
-    arr.length = 10
-/*
     // rows
     for (let y = 0; y < 9; ++y) {
-        arr.fill(0)
-        for (let x = 0; x < 9; ++x) {
-            let cel = board.cell(x, y)
-            if (cel.n === 0) {
-                let cands = cel.candidates
-
-                const cands_it = cands.entries();
-                for (const cand of cands_it) {
-                    let n = cand[0]
-                    arr[n] = arr[n] + 1
-                }
-            }
-        }
-        for (let n = 1; n < 10; ++n) {
-            if (arr[n] === 1) {
-                for (let x = 0; x < 9; ++x) {
-                    let cel = board.cell(x, y)
-                    if (cel.n === 0 && cel.candidates.has(n)) {
-                        cel.n = n
-                        changed = true
-                    }
-                }
-            }
-        }
+        let cells = board.get9Cells(0, y, 9)
+        changed = solve9Series_uniqueNumber(cells)
     }
 
     // columns
     for (let x = 0; x < 9; ++x) {
-        arr.fill(0)
-        for (let y = 0; y < 9; ++y) {
-            let cel = board.cell(x, y)
-            if (cel.n === 0) {
-                let cands = cel.candidates
-
-                const cands_it = cands.entries();
-                for (const cand of cands_it) {
-                    let n = cand[0]
-                    arr[n] = arr[n] + 1
-                }
-            }
-        }
-        for (let n = 1; n < 10; ++n) {
-            if (arr[n] === 1) {
-                for (let y = 0; y < 9; ++y) {
-                    let cel = board.cell(x, y)
-                    if (cel.n === 0 && cel.candidates.has(n)) {
-                        cel.n = n
-                        changed = true
-                    }
-                }
-            }
-        }
+        let cells = board.get9Cells(x, 0, 1)
+        changed = solve9Series_uniqueNumber(cells)
     }
-*/
-    // 3x3 subgrids ###TODO
+
+    // 3x3 subgrids
     for (let x = 0; x < 9; x+=3) {
         for (let y = 0; y < 9; y+=3) {
-            let cells = board.get9Cells(x,y, 3)
-            solve9SeriesWithUniqueNumber(cells)
+            let cells = board.get9Cells(x, y, 3)
+            changed = solve9Series_uniqueNumber(cells)
         }
     }
 
 
     return changed
 }
+
+function areSetsEqual(a, b)
+{
+    return a.size === b.size && [...a].every(value => b.has(value))
+}
+function solve9Series_reducePairNumber(cells)
+{
+    let changed = false
+    for (let i = 0; i < cells.length; ++i) {
+        let cel = cells[i]
+        if (cel.n === 0) {
+            for (let j = i + 1; j < cells.length; ++j) {
+                let cel_j = cells[j]
+                if (cel_j.n === 0) {
+                    if (cel.candidates.size === 2 && areSetsEqual(cel.candidates, cel_j.candidates)) {
+                        let cands_it = cel.candidates.values()
+                        let n1 = cands_it.next().value
+                        let n2 = cands_it.next().value
+                        let slic1 = cells.slice(0, i)
+                        let slic2 = cells.slice(i + 1, j)
+                        let slic3 = cells.slice(j + 1, cells.length)
+
+                        removeCandidateFromCells(slic1, n1)
+                        removeCandidateFromCells(slic1, n2)
+                        removeCandidateFromCells(slic2, n1)
+                        removeCandidateFromCells(slic2, n2)
+                        removeCandidateFromCells(slic3, n1)
+                        removeCandidateFromCells(slic3, n2)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// If there is only one cell in a series holding that unique number, that cell must have that number
+function solve_reducePairNumbers()
+{
+    let changed = false
+    // rows
+    for (let y = 0; y < 9; ++y) {
+        let cells = board.get9Cells(0, y, 9)
+        changed = solve9Series_reducePairNumber(cells)
+    }
+
+    // columns
+    for (let x = 0; x < 9; ++x) {
+        let cells = board.get9Cells(x, 0, 1)
+        changed = solve9Series_reducePairNumber(cells)
+    }
+
+    // 3x3 subgrids
+    for (let x = 0; x < 9; x+=3) {
+        for (let y = 0; y < 9; y+=3) {
+            let cells = board.get9Cells(x, y, 3)
+            changed = solve9Series_reducePairNumber(cells)
+        }
+    }
+
+
+    return changed
+}
+
 
 function drawBoard()
 {
@@ -227,10 +256,8 @@ function drawBoard()
                 let div = div_list.item(9)
                 div.innerText = cell.n
                 div.classList.remove("hide")
-
             } else {
                 var cands = cell.candidates
-                //console.log(x, y, cands)
                 for (let n = 1; n <= 9; ++n) {
                     let div = div_list.item(n-1)
                     if (cands.has(n)) {
@@ -284,15 +311,7 @@ function showCandidates()
         }
     }
 
-/*   board.cell(0,0).candidates.delete(3)
-    board.cell(1,1).candidates.delete(6)
-*/
-
-//    incrementalSolve()
-
-
-
-// update visualization of candidates
+    // update visualization of candidates and input numbers
     drawBoard()
 }
 
@@ -303,9 +322,10 @@ function incrementalSolve()
 {
     let subSolvers = [
         removeObviousCandidates,
-        applySingleCandidates,
+        solve_singleNumber,
         removeObviousCandidates,
-        applySingleCandidates_generic
+        solve_uniqueNumbers,
+        solve_reducePairNumbers
     ]
 
     if (g_solveState >= subSolvers.length)
