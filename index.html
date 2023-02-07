@@ -2,6 +2,31 @@
 <html>
 <head>
 <script>
+
+function areSetsEqual(a, b)
+{
+    return a.size === b.size && [...a].every(value => b.has(value))
+}
+
+function uniteSets(s1, s2)
+{
+    let rs = new Set(s1)
+    for (const v of s2) {
+        rs.add(v)
+    }
+    return rs
+}
+
+function subtractSets(s1, s2)
+{
+    let rs = new Set(s1)
+    for (const v of s2) {
+        rs.delete(v)
+    }
+    return rs
+}
+
+/*
 var input = [0,0,0, 6,0,0, 0,9,7,
              5,0,0, 2,0,0, 0,0,3,
              0,0,0, 0,0,1, 5,0,0,
@@ -13,6 +38,33 @@ var input = [0,0,0, 6,0,0, 0,9,7,
              0,0,9, 0,0,0, 0,0,0,
              0,0,0, 3,0,0, 7,5,0,
              6,1,3, 0,7,0, 0,0,0
+]
+
+var input = [0,0,0, 0,0,0, 0,0,0,
+             0,0,0, 0,0,0, 0,0,0,
+             0,0,0, 0,0,0, 0,0,0,
+
+             0,0,0, 0,0,0, 0,0,0,
+             0,0,0, 0,0,0, 0,0,0,
+             0,0,0, 0,0,0, 0,0,0,
+
+             0,0,0, 0,0,0, 0,0,0,
+             0,0,0, 0,0,0, 0,0,0,
+             0,0,0, 0,0,0, 0,0,0
+]
+*/
+
+var input = [0,8,3, 0,2,0, 7,1,0,
+             1,0,0, 0,8,0, 0,0,3,
+             0,9,0, 7,3,1, 0,4,8,
+
+             7,5,0, 0,9,2, 4,0,1,
+             0,0,0, 4,0,0, 0,5,0,
+             9,4,0, 0,1,0, 6,0,0,
+
+             0,0,0, 0,0,0, 0,0,0,
+             0,0,5, 2,4,0, 0,0,0,
+             0,6,0, 0,5,0, 8,7,0
 ]
 
 var board = {
@@ -89,6 +141,72 @@ function removeObviousCandidates()
                 board.removeFrom9(xr, yr, 3, 3, cel.n)
                 board.removeFrom9(0, y, 9, 1, cel.n)
                 board.removeFrom9(x, 0, 1, 9, cel.n)
+            }
+        }
+    }
+    return changed
+}
+
+function solve_reduceNotPartOfCluster()
+{
+    let changed = false
+    // rows
+    for (let y = 0; y < 9; ++y) {
+        let cells = board.get9Cells(0, y, 9)
+        changed = solve9Series_reduceNotPartOfCluster(cells)
+    }
+
+    // columns
+    for (let x = 0; x < 9; ++x) {
+        let cells = board.get9Cells(x, 0, 1)
+        changed = solve9Series_reduceNotPartOfCluster(cells)
+    }
+
+    // 3x3 subgrids
+    for (let x = 0; x < 9; x+=3) {
+        for (let y = 0; y < 9; y+=3) {
+            let cells = board.get9Cells(x, y, 3)
+            changed = solve9Series_reduceNotPartOfCluster(cells)
+        }
+    }
+
+    return changed
+
+}
+
+/*
+next reducer: if a number exist only in *one* row of a 3x3 grid,
+remove the same number from the rest of the 1x9 row
+*/
+
+function solve9Series_reduceNotPartOfCluster(cells)
+{
+    let changed = false
+    let indicesToInclude = []
+    for (let i = 0; i < cells.length; ++i) {
+        let cell = cells[i]
+        if (cell.n === 0) {
+            indicesToInclude.push(i)
+        }
+    }
+
+    let combs = getCombinations(indicesToInclude)
+    for (let i = 0; i < combs.length; ++i) {
+        let order = combs[i]
+        if (order.length >= 2) {
+            let s = new Set()
+            for (let j = 0; j < order.length; ++j) {
+                let n = order[j]
+                let cell = cells[n]
+                s = uniteSets(s, cell.candidates)
+            }
+            if (s.size === order.length) {
+                for (let c = 0; c < cells.length; c++) {
+                    let cell = cells[c]
+                    if (cell.n === 0 && !order.includes(c)) {
+                        cell.candidates = subtractSets(cell.candidates, s)
+                    }
+                }
             }
         }
     }
@@ -173,10 +291,6 @@ function solve_uniqueNumbers()
     return changed
 }
 
-function areSetsEqual(a, b)
-{
-    return a.size === b.size && [...a].every(value => b.has(value))
-}
 function solve9Series_reducePairNumber(cells)
 {
     let changed = false
@@ -269,6 +383,39 @@ function drawBoard()
     }
 }
 
+/*
+  [1, 2, 5, 8]
+  =>
+  [ [1],   [2],   [5],   [8]]
+    [1,2], [1,5], [1,8],
+    [2,5], [2,8],
+    [5,8],
+    [1,2,5], [1,2,8], [1,5,8], [2,5,8],
+    [1,2,5,8]
+*/
+function getCombinations(input)
+{
+    let combis = []
+    let temp = []
+    const numCombinations = Math.pow(2, input.length)
+
+    for (let i = 1; i < numCombinations; i++)
+    {
+        comb = []
+        let pow = 1
+        for (let j = 0; j < input.length; j++)
+        {
+            if (i & pow)
+                comb.push(input[j]);
+            pow = pow * 2
+        }
+        combis.push(comb)
+    }
+
+    combis.sort((a, b) => a.length - b.length)
+    return combis
+}
+
 function showCandidates()
 {
     let table = document.getElementById('tabell')
@@ -278,6 +425,7 @@ function showCandidates()
         let td_list = tr.getElementsByTagName('td')
         for (let x = 0; x < 9; ++x) {
             let td = td_list.item(x)
+            td.addEventListener("click", cellClicked)
             for (let n = 1; n <= 9; ++n) {
                 let div = document.createElement('div')
                 div.innerHTML = '' + n
@@ -311,6 +459,8 @@ function showCandidates()
         }
     }
 
+    removeObviousCandidates()
+
     // update visualization of candidates and input numbers
     drawBoard()
 }
@@ -322,8 +472,10 @@ function incrementalSolve()
 {
     let subSolvers = [
         removeObviousCandidates,
+        solve_reduceNotPartOfCluster,
         solve_singleNumber,
         removeObviousCandidates,
+        solve_reduceNotPartOfCluster,
         solve_uniqueNumbers,
         solve_reducePairNumbers
     ]
@@ -337,6 +489,132 @@ function incrementalSolve()
     ++g_solveState
 }
 
+var selectedCellX = -1
+var selectedCellY = -1
+var punchCandidateMode = false
+
+function toggleNumberPunchMode()
+{
+    punchCandidateMode = !punchCandidateMode
+
+    let table = document.getElementById('tabell')
+    if (punchCandidateMode) {
+        table.classList.add('candidateMode')
+    } else {
+        table.classList.remove('candidateMode')
+    }
+}
+
+function cellElement(x, y) {
+    let table = document.getElementById('tabell')
+    let tr_list = table.getElementsByTagName('tr')
+    let tr = tr_list[y]
+    let td_list = tr.getElementsByTagName('td')
+    let td = td_list[x]
+    return td
+}
+
+function cellClicked(mouseEvent) {
+    if (selectedCellX >= 0) {
+        let oldTD = cellElement(selectedCellX, selectedCellY)
+        oldTD.classList.remove("selectedCell")
+    }
+    let td = mouseEvent.currentTarget
+    td.classList.add("selectedCell")
+    let x = 0
+    let y = 0
+
+    let table = document.getElementById('tabell')
+    let tr_list = table.getElementsByTagName('tr')
+    let keepGoing = true
+    while (y < 9) {
+        let tr = tr_list[y]
+        if (tr === td.parentNode) {
+            let td_list = tr.getElementsByTagName('td')
+            for (x = 0; x < 9; ++x) {
+                if (td_list[x] == td) {
+                    selectedCellX = x
+                    selectedCellY = y
+                    keepGoing = false
+                    break
+                }
+            }
+        }
+        if (!keepGoing)
+            break
+        ++y
+    }
+}
+document.addEventListener("keydown", function(event) {
+    event = event || window.event;
+    let allowedKeys = "0123456789"
+    if (allowedKeys.includes(event.key)) {
+        if (punchCandidateMode) {
+            event.preventDefault();
+            if (selectedCellX >= 0 && selectedCellY >= 0) {
+                let cel = board.cell(selectedCellX, selectedCellY)
+                let n = parseInt(event.key)
+                if (cel.candidates.has(n)) {
+                    cel.candidates.delete(n)
+                } else {
+                    cel.candidates.add(n)
+                }
+                drawBoard()
+            }
+        } else {
+            // Cancel the default action, if needed
+            event.preventDefault();
+            if (selectedCellX >= 0 && selectedCellY >= 0) {
+                let cel = board.cell(selectedCellX, selectedCellY)
+                cel.n = parseInt(event.key)
+                drawBoard()
+            }
+        }
+    } else if (event.key === 'm') {
+        event.preventDefault();
+        toggleNumberPunchMode()
+    }
+
+    let keyCode = parseInt(event.keyCode)
+    if (keyCode >= 37 && keyCode <= 40) {
+        event.preventDefault();
+        let oldSelectedCellX = selectedCellX
+        let oldSelectedCellY = selectedCellY
+        if (selectedCellX === -1 || selectedCellY === -1) {
+            selectedCellX = 0
+            selectedCellY = 0
+        } else {
+             if (keyCode == 37) {
+               // left arrow
+               --selectedCellX
+            } else if (keyCode == 38) {
+                // up arrow
+                --selectedCellY
+            } else if (keyCode === 39) {
+                // right arrow
+                ++selectedCellX
+            } else if (keyCode == 40) {
+                // down arrow
+                ++selectedCellY
+            }
+        }
+        selectedCellX = Math.max(0, Math.min(selectedCellX, 8))
+        selectedCellY = Math.max(0, Math.min(selectedCellY, 8))
+
+        if (selectedCellX != oldSelectedCellX || selectedCellY != oldSelectedCellY) {
+            if (oldSelectedCellX !== -1 && oldSelectedCellY !== -1) {
+                let oldTD = cellElement(oldSelectedCellX, oldSelectedCellY)
+                oldTD.classList.remove("selectedCell")
+            }
+            if (selectedCellX !== -1 && selectedCellY !== -1) {
+                let newTD = cellElement(selectedCellX, selectedCellY)
+                newTD.classList.add("selectedCell")
+            }
+        }
+    }
+
+})
+
 </script>
 <style>
 table {
@@ -344,18 +622,27 @@ table {
 }
 
 table tr td {
-  /*background-color:#eee;
-*/
     width: 45px;
     height: 45px;
     position: relative;
+}
+
+/* more solid borders to indicate the 3x3 subgrid */
+table tr td:nth-child(-3n + 6) {
+    border-right: 3px solid;
+}
+
+table tr:nth-child(-3n + 6) td {
+    border-bottom: 3px solid;
 }
 
 table tr td div {
     position:absolute;
     font-size: 10px;
 }
-
+input {
+    width: 100%;
+}
 .left {
     left: 2px;
 }
@@ -392,6 +679,13 @@ table tr td div {
     background-color: #a0ffa0;
 }
 
+.selectedCell {
+    background-color: #ffff40;
+}
+
+.candidateMode {
+    background-color: #e0e0ff;
+}
 
 </style>
 </head>
@@ -412,3 +706,7 @@ table tr td div {
 <button onClick="incrementalSolve()">Solve</botton>
 </body>
 </html>
+
+
+
+
