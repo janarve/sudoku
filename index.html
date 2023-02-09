@@ -17,13 +17,16 @@ function uniteSets(s1, s2)
     return rs
 }
 
-function subtractSets(s1, s2)
+function subtractSetInplace(theSet, setToSubtract)
 {
-    let rs = new Set(s1)
-    for (const v of s2) {
-        rs.delete(v)
+    let changed = 0
+    for (const v of setToSubtract) {
+        if (theSet.has(v)) {
+            theSet.delete(v)
+            changed |= 1
+        }
     }
-    return rs
+    return !!changed
 }
 
 /*
@@ -53,7 +56,6 @@ var input = [0,0,0, 0,0,0, 0,0,0,
              0,0,0, 0,0,0, 0,0,0
 ]
 */
-
 var input = [0,8,3, 0,2,0, 7,1,0,
              1,0,0, 0,8,0, 0,0,3,
              0,9,0, 7,3,1, 0,4,8,
@@ -73,19 +75,27 @@ var board = {
     },
     removeFrom9: function (x, y, xc, yc, num)
     {
+        let changed = false
         let yend = y + yc
         let xend = x + xc
         for (let yy = y; yy < yend; ++yy) {
             for (let xx = x; xx < xend; ++xx) {
                 let cel = this.cell(xx, yy)
-                this.removeFromCell(cel, num)
+                if (cel.candidates.has(num)) {
+                    changed = true
+                    this.removeFromCell(cel, num)
+                }
             }
         }
+        return changed
     },
     get9Cells: function(x, y, xc) {
         if (xc != 1 && xc != 3 && xc != 9)
             console.assert('xc:', xc)
         let yc = 9/xc
+        return this.getCells(x, y, xc, yc)
+    },
+    getCells: function(x, y, xc, yc) {
         let res = []
         let yend = y + yc
         let xend = x + xc
@@ -104,14 +114,41 @@ var board = {
 }
 
 for (let c = 0; c < input.length; ++c) {
-    let s = new Set()
-    for (let c = 1; c <= 9; ++c) {
-        s.add(c)
-    }
-    var entry = {}
+    board.cells.push({})
+}
+clearBoard()
+for (let c = 0; c < input.length; ++c) {
+    let entry = board.cells[c]
     entry.n = input[c]
-    entry.candidates = s
-    board.cells.push(entry)
+}
+
+function setNumberForCell(cell, n, bRemoveAffectedCandidates = true)
+{
+    cell.n = n
+    let numbersTR = document.getElementById('numbers')
+    let td_list = numbersTR.getElementsByTagName('td')
+    let numCount = []
+    numCount.length = 10
+    numCount.fill(0)
+
+    for (let i = 0; i < board.cells.length; ++i) {
+        let cel = board.cells[i]
+        numCount[cel.n] = numCount[cel.n] + 1
+    }
+
+    for (let i = 0; i < 9; ++i) {
+        let td = td_list[i]
+        let nc = numCount[i + 1]
+        if (nc === 9) {
+            td.classList.add('disabled')
+        } else {
+            td.classList.remove('disabled')
+        }
+        td.innerHTML = i + 1
+    }
+    if (bRemoveAffectedCandidates) {
+        removeObviousCandidates()
+    }
 }
 
 function getCandidates(x, y)
@@ -123,94 +160,181 @@ function getCandidates(x, y)
 
 function removeCandidateFromCells(cells, num)
 {
+    let changed = 0
+    let numsToRemove
+    if (typeof(num) === 'number') {
+        numsToRemove = new Set([num])
+    } else {
+        numsToRemove = new Set(num)
+    }
     for (let i = 0; i < cells.length; ++i) {
         let cel = cells[i]
-        cel.candidates.delete(num)
+        changed |= subtractSetInplace(cel.candidates, numsToRemove)
     }
+    return !!changed
 }
 
 function removeObviousCandidates()
 {
-    let changed = true
+    let changed = 0
     for (let y = 0; y < 9; ++y) {
         for (let x = 0; x < 9; ++x) {
             let cel = board.cell(x, y)
             if (cel.n > 0) {
                 let xr = Math.floor(x/3)*3
                 let yr = Math.floor(y/3)*3
-                board.removeFrom9(xr, yr, 3, 3, cel.n)
-                board.removeFrom9(0, y, 9, 1, cel.n)
-                board.removeFrom9(x, 0, 1, 9, cel.n)
+                changed |= board.removeFrom9(xr, yr, 3, 3, cel.n)
+                changed |= board.removeFrom9(0, y, 9, 1, cel.n)
+                changed |= board.removeFrom9(x, 0, 1, 9, cel.n)
             }
         }
     }
-    return changed
+    return !!changed
 }
 
-function solve_reduceNotPartOfCluster()
+
+/*
+ Locked candidates
+ https://www.sudoku9x9.com/sudoku_solving_techniques.php
+*/
+function solve_reduceLockedCandidates()
 {
-    let changed = false
+    function solve_reduceLockedCandidates3x3(x, y)
+    {
+        /* Can probably shorten this by making it orientation-agnostic */
+        let changed = 0
+        let columnHasNumber = [[],[],[]]
+        for (let a of columnHasNumber) {
+            a.length = 10
+            a.fill(0)
+        }
+        let rowHasNumber = [[],[],[]]
+        for (let a of rowHasNumber) {
+            a.length = 10
+            a.fill(0)
+        }
+        for (let xi = 0; xi < 3; ++xi) {
+            for (let yi = 0; yi < 3; ++yi) {
+                let cel = board.cell(x + xi, y + yi)
+                if (cel.n === 0) {
+                    for (const c of cel.candidates) {
+                        columnHasNumber[xi][c] = 1
+                        rowHasNumber[yi][c] = 1
+                    }
+                }
+            }
+        }
+
+        for (let n = 1; n < 10; ++n) {
+            let count = 0
+            let column = -1
+            for (let c = 0; c < 3; ++c) {
+                let hn = columnHasNumber[c][n]
+                if (hn === 1)
+                    column = c
+                count += hn
+            }
+            if (count === 1) {
+                if (y == 0) {
+                    changed |= removeCandidateFromCells(board.getCells(column + x, 3, 1, 6), n)
+                } else if (y === 3) {
+                    changed |= removeCandidateFromCells(board.getCells(column + x, 0, 1, 3), n)
+                    changed |= removeCandidateFromCells(board.getCells(column + x, 6, 1, 3), n)
+                } else if (y === 6) {
+                    changed |= removeCandidateFromCells(board.getCells(column + x, 0, 1, 6), n)
+                }
+            }
+        }
+
+        for (let n = 1; n < 10; ++n) {
+            let count = 0
+            let row = -1
+            for (let r = 0; r < 3; ++r) {
+                let hn = rowHasNumber[r][n]
+                if (hn === 1)
+                    row = r
+                count += hn
+            }
+            if (count === 1) {
+                if (x == 0) {
+                    changed |= removeCandidateFromCells(board.getCells(3, row + y, 6, 1), n)
+                } else if (x === 3) {
+                    changed |= removeCandidateFromCells(board.getCells(0, row + y, 3, 1), n)
+                    changed |= removeCandidateFromCells(board.getCells(6, row + y, 3, 1), n)
+                } else if (x === 6) {
+                    changed |= removeCandidateFromCells(board.getCells(0, row + y, 6, 1), n)
+                }
+            }
+        }
+        return !!changed
+    }
+    let changed = 0
+    for (let x = 0; x < 9; x+=3) {
+        for (let y = 0; y < 9; y+=3) {
+            changed |= solve_reduceLockedCandidates3x3(x, y)
+        }
+    }
+    return !!changed
+}
+
+function solve_reduceNakedCandidates()
+{
+    function solve9Series_reduceNakedCandidates(cells)
+    {
+        let changed = 0
+        let indicesToInclude = []
+        for (let i = 0; i < cells.length; ++i) {
+            let cell = cells[i]
+            if (cell.n === 0) {
+                indicesToInclude.push(i)
+            }
+        }
+
+        let combs = getCombinations(indicesToInclude)
+        for (let i = 0; i < combs.length; ++i) {
+            let order = combs[i]
+            if (order.length >= 2) {
+                let s = new Set()
+                for (let j = 0; j < order.length; ++j) {
+                    let n = order[j]
+                    let cell = cells[n]
+                    s = uniteSets(s, cell.candidates)
+                }
+                if (s.size === order.length) {
+                    for (let c = 0; c < cells.length; c++) {
+                        let cell = cells[c]
+                        if (cell.n === 0 && !order.includes(c)) {
+                            changed |= subtractSetInplace(cell.candidates, s)
+                        }
+                    }
+                }
+            }
+        }
+        return !!changed
+    }
+
+    let changed = 0
     // rows
     for (let y = 0; y < 9; ++y) {
         let cells = board.get9Cells(0, y, 9)
-        changed = solve9Series_reduceNotPartOfCluster(cells)
+        changed |= solve9Series_reduceNakedCandidates(cells)
     }
 
     // columns
     for (let x = 0; x < 9; ++x) {
         let cells = board.get9Cells(x, 0, 1)
-        changed = solve9Series_reduceNotPartOfCluster(cells)
+        changed |= solve9Series_reduceNakedCandidates(cells)
     }
 
     // 3x3 subgrids
     for (let x = 0; x < 9; x+=3) {
         for (let y = 0; y < 9; y+=3) {
             let cells = board.get9Cells(x, y, 3)
-            changed = solve9Series_reduceNotPartOfCluster(cells)
+            changed |= solve9Series_reduceNakedCandidates(cells)
         }
     }
 
-    return changed
-
-}
-
-/*
-next reducer: if a number exist only in *one* row of a 3x3 grid,
-remove the same number from the rest of the 1x9 row
-*/
-
-function solve9Series_reduceNotPartOfCluster(cells)
-{
-    let changed = false
-    let indicesToInclude = []
-    for (let i = 0; i < cells.length; ++i) {
-        let cell = cells[i]
-        if (cell.n === 0) {
-            indicesToInclude.push(i)
-        }
-    }
-
-    let combs = getCombinations(indicesToInclude)
-    for (let i = 0; i < combs.length; ++i) {
-        let order = combs[i]
-        if (order.length >= 2) {
-            let s = new Set()
-            for (let j = 0; j < order.length; ++j) {
-                let n = order[j]
-                let cell = cells[n]
-                s = uniteSets(s, cell.candidates)
-            }
-            if (s.size === order.length) {
-                for (let c = 0; c < cells.length; c++) {
-                    let cell = cells[c]
-                    if (cell.n === 0 && !order.includes(c)) {
-                        cell.candidates = subtractSets(cell.candidates, s)
-                    }
-                }
-            }
-        }
-    }
-    return changed
+    return !!changed
 }
 
 function solve_singleNumber()
@@ -221,42 +345,8 @@ function solve_singleNumber()
             let cel = board.cell(x, y)
             let cands = cel.candidates
             if (cel.n === 0 && cands.size === 1) {
-                cel.n = cands.values().next().value
-                removeObviousCandidates()
+                setNumberForCell(cel, cands.values().next().value, true)
                 changed = true
-            }
-        }
-    }
-    return changed
-}
-
-function solve9Series_uniqueNumber(cells)
-{
-    let changed = false
-    arr = []
-    arr.length = 10
-    arr.fill(0)
-    for (let i = 0; i < cells.length; ++i) {
-        let cel = cells[i]
-        if (cel.n === 0) {
-            let cands = cel.candidates
-
-            const cands_it = cands.entries();
-            for (const cand of cands_it) {
-                let n = cand[0]
-                arr[n] = arr[n] + 1
-            }
-        }
-    }
-    for (let n = 1; n < 10; ++n) {
-        if (arr[n] === 1) {
-            for (let i = 0; i < 9; ++i) {
-                let cel = cells[i]
-                if (cel.n === 0 && cel.candidates.has(n)) {
-                    cel.n = n
-                    removeObviousCandidates()
-                    changed = true
-                }
             }
         }
     }
@@ -266,93 +356,126 @@ function solve9Series_uniqueNumber(cells)
 // If there is only one cell in a series holding that unique number, that cell must have that number
 function solve_uniqueNumbers()
 {
-    let changed = false
-    // rows
-    for (let y = 0; y < 9; ++y) {
-        let cells = board.get9Cells(0, y, 9)
-        changed = solve9Series_uniqueNumber(cells)
-    }
+    function solve9Series_uniqueNumber(cells)
+    {
+        let changed = false
+        arr = []
+        arr.length = 10
+        arr.fill(0)
+        for (let i = 0; i < cells.length; ++i) {
+            let cel = cells[i]
+            if (cel.n === 0) {
+                let cands = cel.candidates
 
-    // columns
-    for (let x = 0; x < 9; ++x) {
-        let cells = board.get9Cells(x, 0, 1)
-        changed = solve9Series_uniqueNumber(cells)
-    }
-
-    // 3x3 subgrids
-    for (let x = 0; x < 9; x+=3) {
-        for (let y = 0; y < 9; y+=3) {
-            let cells = board.get9Cells(x, y, 3)
-            changed = solve9Series_uniqueNumber(cells)
+                const cands_it = cands.entries();
+                for (const cand of cands_it) {
+                    let n = cand[0]
+                    arr[n] = arr[n] + 1
+                }
+            }
         }
-    }
-
-
-    return changed
-}
-
-function solve9Series_reducePairNumber(cells)
-{
-    let changed = false
-    for (let i = 0; i < cells.length; ++i) {
-        let cel = cells[i]
-        if (cel.n === 0) {
-            for (let j = i + 1; j < cells.length; ++j) {
-                let cel_j = cells[j]
-                if (cel_j.n === 0) {
-                    if (cel.candidates.size === 2 && areSetsEqual(cel.candidates, cel_j.candidates)) {
-                        let cands_it = cel.candidates.values()
-                        let n1 = cands_it.next().value
-                        let n2 = cands_it.next().value
-                        let slic1 = cells.slice(0, i)
-                        let slic2 = cells.slice(i + 1, j)
-                        let slic3 = cells.slice(j + 1, cells.length)
-
-                        removeCandidateFromCells(slic1, n1)
-                        removeCandidateFromCells(slic1, n2)
-                        removeCandidateFromCells(slic2, n1)
-                        removeCandidateFromCells(slic2, n2)
-                        removeCandidateFromCells(slic3, n1)
-                        removeCandidateFromCells(slic3, n2)
+        for (let n = 1; n < 10; ++n) {
+            if (arr[n] === 1) {
+                for (let i = 0; i < 9; ++i) {
+                    let cel = cells[i]
+                    if (cel.n === 0 && cel.candidates.has(n)) {
+                        setNumberForCell(cel, n, true)
+                        changed = true
                     }
                 }
             }
         }
+        return changed
     }
-}
 
-// If there is only one cell in a series holding that unique number, that cell must have that number
-function solve_reducePairNumbers()
-{
-    let changed = false
+    let changed = 0
     // rows
     for (let y = 0; y < 9; ++y) {
         let cells = board.get9Cells(0, y, 9)
-        changed = solve9Series_reducePairNumber(cells)
+        changed |= solve9Series_uniqueNumber(cells)
     }
 
     // columns
     for (let x = 0; x < 9; ++x) {
         let cells = board.get9Cells(x, 0, 1)
-        changed = solve9Series_reducePairNumber(cells)
+        changed |= solve9Series_uniqueNumber(cells)
     }
 
     // 3x3 subgrids
     for (let x = 0; x < 9; x+=3) {
         for (let y = 0; y < 9; y+=3) {
             let cells = board.get9Cells(x, y, 3)
-            changed = solve9Series_reducePairNumber(cells)
+            changed |= solve9Series_uniqueNumber(cells)
+        }
+    }
+    return !!changed
+}
+
+
+// If there is only one cell in a series holding that unique number, that cell must have that number
+function solve_reducePairNumbers()
+{
+    function solve9Series_reducePairNumber(cells)
+    {
+        let changed = 0
+        for (let i = 0; i < cells.length; ++i) {
+            let cel = cells[i]
+            if (cel.n === 0) {
+                for (let j = i + 1; j < cells.length; ++j) {
+                    let cel_j = cells[j]
+                    if (cel_j.n === 0) {
+                        if (cel.candidates.size === 2 && areSetsEqual(cel.candidates, cel_j.candidates)) {
+                            let cands_it = cel.candidates.values()
+                            let n1 = cands_it.next().value
+                            let n2 = cands_it.next().value
+                            let slic1 = cells.slice(0, i)
+                            let slic2 = cells.slice(i + 1, j)
+                            let slic3 = cells.slice(j + 1, cells.length)
+
+                            // avoid short circuit with bitwise or
+                            changed |= removeCandidateFromCells(slic1, n1)
+                            changed |= removeCandidateFromCells(slic1, n2)
+                            changed |= removeCandidateFromCells(slic2, n1)
+                            changed |= removeCandidateFromCells(slic2, n2)
+                            changed |= removeCandidateFromCells(slic3, n1)
+                            changed |= removeCandidateFromCells(slic3, n2)
+                        }
+                    }
+                }
+            }
+        }
+        return !!changed
+    }
+    let changed = 0
+    // rows
+    for (let y = 0; y < 9; ++y) {
+        let cells = board.get9Cells(0, y, 9)
+        changed |= solve9Series_reducePairNumber(cells)
+    }
+
+    // columns
+    for (let x = 0; x < 9; ++x) {
+        let cells = board.get9Cells(x, 0, 1)
+        changed |= solve9Series_reducePairNumber(cells)
+    }
+
+    // 3x3 subgrids
+    for (let x = 0; x < 9; x+=3) {
+        for (let y = 0; y < 9; y+=3) {
+            let cells = board.get9Cells(x, y, 3)
+            changed |= solve9Series_reducePairNumber(cells)
         }
     }
 
-
-    return changed
+    return !!changed
 }
 
 
 function drawBoard()
 {
-    let table = document.getElementById('tabell')
+    let table = document.getElementById('boardView')
+    if (table === null)
+        return
     let tr_list = table.getElementsByTagName('tr')
 
     for (let y = 0; y < 9; ++y) {
@@ -418,7 +541,9 @@ function getCombinations(input)
 
 function showCandidates()
 {
-    let table = document.getElementById('tabell')
+    let logger = document.getElementById('logger')
+    logger.value = ''
+    let table = document.getElementById('boardView')
     let tr_list = table.getElementsByTagName('tr')
     for (let y = 0; y < 9; ++y) {
         let tr = tr_list.item(y)
@@ -459,34 +584,66 @@ function showCandidates()
         }
     }
 
-    removeObviousCandidates()
+    //removeObviousCandidates()
+    //solve_reduceNotPartOfCluster()
+    //solve_reduceLockedCandidates()
 
     // update visualization of candidates and input numbers
     drawBoard()
 }
 
-
-var g_solveState = 0
+let g_solvers = new Map([
+    ["Single number", solve_singleNumber],
+    ["Remove obvious candidates", removeObviousCandidates],
+    ["Solve unique numbers", solve_uniqueNumbers],
+    ["Remove naked candidates", solve_reduceNakedCandidates],
+    ["Locked candidates", solve_reduceLockedCandidates],
+]);
 
 function incrementalSolve()
 {
-    let subSolvers = [
-        removeObviousCandidates,
-        solve_reduceNotPartOfCluster,
-        solve_singleNumber,
-        removeObviousCandidates,
-        solve_reduceNotPartOfCluster,
-        solve_uniqueNumbers,
-        solve_reducePairNumbers
-    ]
+    let changed = false
 
-    if (g_solveState >= subSolvers.length)
-        g_solveState = 0
-    subSolvers[g_solveState]()
-
+    let logger = document.getElementById('logger')
+    for (const [key, fnSolve] of g_solvers.entries()) {
+        //console.log(`${key} = ${value}`)
+        if (fnSolve()) {
+            changed = true
+            logger.value = logger.value + key + '\n'
+            break;
+        }
+    }
     drawBoard()
+}
 
-    ++g_solveState
+function clearBoard()
+{
+    let s = new Set()
+    for (let c = 1; c <= 9; ++c) {
+        s.add(c)
+    }
+
+    for (let i = 0; i < board.cells.length; ++i) {
+        let cel = board.cells[i]
+        cel.n = 0
+        cel.candidates = s
+    }
+    drawBoard()
+}
+
+function saveBoardState()
+{
+    for (let i = 0; i < board.cells.length; ++i) {
+        let cel = board.cells[i]
+        input[i] = cel.n
+    }
+    localStorage.setItem('boardState', input)
+}
+
+function restoreBoardState()
+{
+    input = localStorage.getItem('boardState')
+    drawBoard()
 }
 
 var selectedCellX = -1
@@ -497,16 +654,20 @@ function toggleNumberPunchMode()
 {
     punchCandidateMode = !punchCandidateMode
 
-    let table = document.getElementById('tabell')
-    if (punchCandidateMode) {
-        table.classList.add('candidateMode')
-    } else {
-        table.classList.remove('candidateMode')
+    let table = document.getElementById('boardView')
+    let arr = document.getElementsByClassName('selectedCell')
+    if (arr.length === 1) {
+        let selectedTD = arr[0]
+        if (punchCandidateMode) {
+            selectedTD.classList.add('candidateMode')
+        } else {
+            selectedTD.classList.remove('candidateMode')
+        }
     }
 }
 
 function cellElement(x, y) {
-    let table = document.getElementById('tabell')
+    let table = document.getElementById('boardView')
     let tr_list = table.getElementsByTagName('tr')
     let tr = tr_list[y]
     let td_list = tr.getElementsByTagName('td')
@@ -514,17 +675,31 @@ function cellElement(x, y) {
     return td
 }
 
-function cellClicked(mouseEvent) {
-    if (selectedCellX >= 0) {
+function moveSelectedCell(x, y)
+{
+    if (selectedCellX !== -1 && selectedCellY !== -1) {
         let oldTD = cellElement(selectedCellX, selectedCellY)
         oldTD.classList.remove("selectedCell")
+        oldTD.classList.remove("candidateMode")
     }
+
+    selectedCellX = x
+    selectedCellY = y
+    if (x !== -1 && y !== -1) {
+        let newTD = cellElement(x, y)
+        newTD.classList.add('selectedCell')
+        if (punchCandidateMode) {
+            newTD.classList.add('candidateMode')
+        }
+    }
+}
+
+function cellClicked(mouseEvent) {
     let td = mouseEvent.currentTarget
-    td.classList.add("selectedCell")
     let x = 0
     let y = 0
 
-    let table = document.getElementById('tabell')
+    let table = document.getElementById('boardView')
     let tr_list = table.getElementsByTagName('tr')
     let keepGoing = true
     while (y < 9) {
@@ -533,8 +708,7 @@ function cellClicked(mouseEvent) {
             let td_list = tr.getElementsByTagName('td')
             for (x = 0; x < 9; ++x) {
                 if (td_list[x] == td) {
-                    selectedCellX = x
-                    selectedCellY = y
+                    moveSelectedCell(x, y)
                     keepGoing = false
                     break
                 }
@@ -548,6 +722,8 @@ function cellClicked(mouseEvent) {
 document.addEventListener("keydown", function(event) {
     event = event || window.event;
     let allowedKeys = "0123456789"
+    let sel_x = selectedCellX
+    let sel_y = selectedCellY
     if (allowedKeys.includes(event.key)) {
         if (punchCandidateMode) {
             event.preventDefault();
@@ -566,7 +742,7 @@ document.addEventListener("keydown", function(event) {
             event.preventDefault();
             if (selectedCellX >= 0 && selectedCellY >= 0) {
                 let cel = board.cell(selectedCellX, selectedCellY)
-                cel.n = parseInt(event.key)
+                setNumberForCell(cel, parseInt(event.key), true)
                 drawBoard()
             }
         }
@@ -578,45 +754,39 @@ document.addEventListener("keydown", function(event) {
     let keyCode = parseInt(event.keyCode)
     if (keyCode >= 37 && keyCode <= 40) {
         event.preventDefault();
-        let oldSelectedCellX = selectedCellX
-        let oldSelectedCellY = selectedCellY
-        if (selectedCellX === -1 || selectedCellY === -1) {
-            selectedCellX = 0
-            selectedCellY = 0
+        if (sel_x === -1 || sel_x === -1) {
+            sel_x = 0
+            sel_x = 0
         } else {
              if (keyCode == 37) {
                // left arrow
-               --selectedCellX
+               --sel_x
             } else if (keyCode == 38) {
                 // up arrow
-                --selectedCellY
+                --sel_y
             } else if (keyCode === 39) {
                 // right arrow
-                ++selectedCellX
+                ++sel_x
             } else if (keyCode == 40) {
                 // down arrow
-                ++selectedCellY
+                ++sel_y
             }
         }
-        selectedCellX = Math.max(0, Math.min(selectedCellX, 8))
-        selectedCellY = Math.max(0, Math.min(selectedCellY, 8))
+        sel_x = Math.max(0, Math.min(sel_x, 8))
+        sel_y = Math.max(0, Math.min(sel_y, 8))
 
-        if (selectedCellX != oldSelectedCellX || selectedCellY != oldSelectedCellY) {
-            if (oldSelectedCellX !== -1 && oldSelectedCellY !== -1) {
-                let oldTD = cellElement(oldSelectedCellX, oldSelectedCellY)
-                oldTD.classList.remove("selectedCell")
-            }
-            if (selectedCellX !== -1 && selectedCellY !== -1) {
-                let newTD = cellElement(selectedCellX, selectedCellY)
-                newTD.classList.add("selectedCell")
-            }
-        }
+        moveSelectedCell(sel_x, sel_y)
     }
 
 })
 
 </script>
 <style>
+
+* {
+  box-sizing: border-box;
+}
+
 table {
     border-collapse: collapse;
 }
@@ -627,22 +797,27 @@ table tr td {
     position: relative;
 }
 
+#numbers .disabled {
+    width: 45px;
+    height: 45px;
+    position: relative;
+    color: #ccc;
+}
+
 /* more solid borders to indicate the 3x3 subgrid */
-table tr td:nth-child(-3n + 6) {
+#boardView tr td:nth-child(-3n + 6) {
     border-right: 3px solid;
 }
 
-table tr:nth-child(-3n + 6) td {
+#boardView tr:nth-child(-3n + 6) td {
     border-bottom: 3px solid;
 }
 
-table tr td div {
+#boardView tr td div {
     position:absolute;
     font-size: 10px;
 }
-input {
-    width: 100%;
-}
+
 .left {
     left: 2px;
 }
@@ -687,23 +862,61 @@ input {
     background-color: #e0e0ff;
 }
 
+.row {
+  margin-left:-5px;
+  margin-right:-5px;
+  width: 100%;
+}
+
+.column {
+  float: left;
+  width: 50%;
+  padding: 5px;
+}
+
+/* Clearfix (clear floats) */
+.row::after {
+  content: "";
+  clear: both;
+  display: table;
+}
+
 </style>
 </head>
 <body onload="showCandidates()">
-<table id=tabell border="1">
-<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
-<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
-<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+<div class="row">
+  <div class="column">
+    <table id=boardView border="1">
+        <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
 
-<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
-<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
-<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
 
-<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
-<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
-<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    </table>
+  </div>
+  <div class="column">
+    <textarea id=logger style="width: 100%; height: 410px;"/></textarea>
+  </div>
+</div>
+
+<br/>
+
+<table border="1">
+    <tr id=numbers><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
 </table>
+
+<button onClick="clearBoard()">Clear board</botton>
+<button onClick="saveBoardState()">Save board</botton>
+<button onClick="restoreBoardState()">Restore saved board</botton>
 <button onClick="incrementalSolve()">Solve</botton>
+
+
 </body>
 </html>
 
